@@ -1,7 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
-// /preview is public because it reads only checked-in parser output, no rows.
-const isPublic = createRouteMatcher(["/sign-in(.*)", "/sign-up(.*)", "/preview(.*)"]);
+const isPublic = createRouteMatcher(["/sign-in(.*)", "/sign-up(.*)"]);
 
 // Protection happens here, before any route renders, so a signed-out visitor
 // gets a redirect and never receives the page's HTML.

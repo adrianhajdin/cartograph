@@ -20,32 +20,47 @@ export type Database = {
       analyses: {
         Row: {
           commit_sha: string | null
+          coverage: Json | null
           created_at: string
+          detected_projects: Json | null
           error: string | null
           finished_at: string | null
           id: string
           organization_id: string
           project_id: string
+          stage: Database["public"]["Enums"]["analysis_stage"] | null
+          stage_message: string | null
+          started_at: string | null
           status: Database["public"]["Enums"]["analysis_status"]
         }
         Insert: {
           commit_sha?: string | null
+          coverage?: Json | null
           created_at?: string
+          detected_projects?: Json | null
           error?: string | null
           finished_at?: string | null
           id?: string
           organization_id: string
           project_id: string
+          stage?: Database["public"]["Enums"]["analysis_stage"] | null
+          stage_message?: string | null
+          started_at?: string | null
           status?: Database["public"]["Enums"]["analysis_status"]
         }
         Update: {
           commit_sha?: string | null
+          coverage?: Json | null
           created_at?: string
+          detected_projects?: Json | null
           error?: string | null
           finished_at?: string | null
           id?: string
           organization_id?: string
           project_id?: string
+          stage?: Database["public"]["Enums"]["analysis_stage"] | null
+          stage_message?: string | null
+          started_at?: string | null
           status?: Database["public"]["Enums"]["analysis_status"]
         }
         Relationships: [
@@ -70,28 +85,34 @@ export type Database = {
           analysis_id: string
           id: string
           kind: string
+          line: number
           organization_id: string
           source_file_id: string
           specifier: string
           target_file_id: string
+          type_only: boolean
         }
         Insert: {
           analysis_id: string
           id?: string
           kind: string
+          line: number
           organization_id: string
           source_file_id: string
           specifier: string
           target_file_id: string
+          type_only: boolean
         }
         Update: {
           analysis_id?: string
           id?: string
           kind?: string
+          line?: number
           organization_id?: string
           source_file_id?: string
           specifier?: string
           target_file_id?: string
+          type_only?: boolean
         }
         Relationships: [
           {
@@ -208,23 +229,47 @@ export type Database = {
       files: {
         Row: {
           analysis_id: string
+          bytes: number | null
+          fan_in: number | null
+          fan_out: number | null
+          hash: string | null
           id: string
+          lines: number | null
+          module: string | null
           organization_id: string
           path: string
+          reached_by: string | null
+          skip_detail: string | null
           skip_reason: string | null
         }
         Insert: {
           analysis_id: string
+          bytes?: number | null
+          fan_in?: number | null
+          fan_out?: number | null
+          hash?: string | null
           id?: string
+          lines?: number | null
+          module?: string | null
           organization_id: string
           path: string
+          reached_by?: string | null
+          skip_detail?: string | null
           skip_reason?: string | null
         }
         Update: {
           analysis_id?: string
+          bytes?: number | null
+          fan_in?: number | null
+          fan_out?: number | null
+          hash?: string | null
           id?: string
+          lines?: number | null
+          module?: string | null
           organization_id?: string
           path?: string
+          reached_by?: string | null
+          skip_detail?: string | null
           skip_reason?: string | null
         }
         Relationships: [
@@ -384,10 +429,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      insert_edges: {
+        Args: { p_analysis_id: string; p_edges: Json }
+        Returns: number
+      }
     }
     Enums: {
-      analysis_status: "queued" | "parsing" | "complete" | "failed"
+      analysis_stage: "fetch" | "select" | "parse" | "store"
+      analysis_status: "queued" | "running" | "complete" | "failed"
     }
     CompositeTypes: {
       [_ in never]: never

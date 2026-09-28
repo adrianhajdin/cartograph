@@ -1,11 +1,15 @@
 import { auth } from "@clerk/nextjs/server";
-import type { Enums } from "@/lib/supabase/database.types";
+import { connection } from "next/server";
+import { AnalysisRow, type RowData } from "@/components/progress/analysis-row";
+import { StateMark } from "@/components/state-mark";
+import { SubmitForm } from "@/components/submit-form";
+import { isStale, type Status } from "@/lib/pipeline/stages";
 import { createServerSupabase } from "@/lib/supabase/server";
-
-type Status = Enums<"analysis_status">;
+import { ago } from "@/lib/time";
 
 const LIST_LIMIT = 100;
-const STATUS_ORDER: Status[] = ["parsing", "queued", "complete", "failed"];
+type Tally = Status | "stale";
+const TALLY_ORDER: Tally[] = ["running", "queued", "stale", "complete", "failed"];
 
 export default async function DashboardPage() {
   const { sessionClaims } = await auth();
@@ -19,33 +23,29 @@ export default async function DashboardPage() {
     );
   }
 
-  // No organization filter: the row policy scopes this to the organization on
-  // the token. Switching organization changes the token, not this query.
-  const supabase = await createServerSupabase();
-  const { data: analyses, error } = await supabase
-    .from("analyses")
-    .select("id, status, commit_sha, error, created_at, finished_at, projects(repo_owner, repo_name)")
-    .order("created_at", { ascending: false })
-    .limit(LIST_LIMIT);
-  if (error) throw new Error(`Couldn't load analyses: ${error.message}`);
+  const rows = await loadRows();
 
-  const counts = new Map<Status, number>();
-  for (const a of analyses) counts.set(a.status, (counts.get(a.status) ?? 0) + 1);
+  const counts = new Map<Tally, number>();
+  for (const r of rows) {
+    const tally: Tally = r.staleAtRender ? "stale" : r.progress.status;
+    counts.set(tally, (counts.get(tally) ?? 0) + 1);
+  }
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-9 shrink-0 items-center gap-4 border-b border-line px-3">
         <h1 className="text-[13px] font-semibold">{orgName}</h1>
         <span className="text-xs text-fg-muted tabular-nums">
-          {analyses.length === LIST_LIMIT
+          {rows.length === LIST_LIMIT
             ? `Latest ${LIST_LIMIT} analyses`
-            : `${analyses.length} ${analyses.length === 1 ? "analysis" : "analyses"}`}
+            : `${rows.length} ${rows.length === 1 ? "analysis" : "analyses"}`}
         </span>
-        {analyses.length > 0 && (
+        <SubmitForm />
+        {rows.length > 0 && (
           <ul className="ml-auto flex items-center gap-3 text-xs text-fg-muted tabular-nums">
-            {STATUS_ORDER.filter((s) => counts.has(s)).map((s) => (
+            {TALLY_ORDER.filter((s) => counts.has(s)).map((s) => (
               <li key={s} className="flex items-center gap-1.5">
-                <StateMark status={s} />
+                <StateMark status={s === "stale" ? "running" : s} stale={s === "stale"} />
                 {counts.get(s)} {s}
               </li>
             ))}
@@ -53,10 +53,10 @@ export default async function DashboardPage() {
         )}
       </div>
 
-      {analyses.length === 0 ? (
+      {rows.length === 0 ? (
         <div className="px-3 py-10 text-xs text-fg-muted">
           <p className="text-fg">No analyses yet.</p>
-          <p className="mt-1">Repositories this organization analyses will be listed here.</p>
+          <p className="mt-1">Paste a public GitHub repository above to map it.</p>
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-auto">
@@ -78,55 +78,8 @@ export default async function DashboardPage() {
               </tr>
             </thead>
             <tbody>
-              {analyses.map((a) => (
-                <tr key={a.id} className="border-b border-line align-top">
-                  <td className="truncate px-3 py-1.5 font-mono">
-                    {a.projects ? (
-                      <>
-                        <span className="text-fg-muted">{a.projects.repo_owner}/</span>
-                        {a.projects.repo_name}
-                      </>
-                    ) : (
-                      <span className="text-fg-muted">—</span>
-                    )}
-                    {a.error && (
-                      <div className="mt-0.5 truncate font-sans text-fg-muted" title={a.error}>
-                        {a.error}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-3 py-1.5">
-                    <span
-                      className={`flex items-center gap-1.5 ${
-                        a.status === "queued" ? "text-fg-muted" : "text-fg"
-                      }`}
-                    >
-                      <StateMark status={a.status} />
-                      {a.status}
-                    </span>
-                  </td>
-                  <td className="hidden px-3 py-1.5 font-mono text-fg-muted sm:table-cell">
-                    {a.commit_sha ? (
-                      <span title={a.commit_sha}>{a.commit_sha.slice(0, 7)}</span>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className="px-3 py-1.5 text-right text-fg-muted tabular-nums">
-                    <time dateTime={a.created_at} title={a.created_at}>
-                      {ago(a.created_at)}
-                    </time>
-                  </td>
-                  <td className="hidden px-3 py-1.5 text-right text-fg-muted tabular-nums sm:table-cell">
-                    {a.finished_at ? (
-                      <time dateTime={a.finished_at} title={a.finished_at}>
-                        {ago(a.finished_at)}
-                      </time>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                </tr>
+              {rows.map((row) => (
+                <AnalysisRow key={row.id} row={row} />
               ))}
             </tbody>
           </table>
@@ -136,33 +89,29 @@ export default async function DashboardPage() {
   );
 }
 
-// State is carried by shape, not hue: green, amber and blue already mean
-// direction and interaction elsewhere, so status stays greyscale. The ring
-// fills as an analysis progresses; failure crosses it out.
-function StateMark({ status }: { status: Status }) {
-  return (
-    <svg viewBox="0 0 10 10" className="size-2.5 shrink-0" aria-hidden="true">
-      {status === "complete" ? (
-        <circle cx="5" cy="5" r="4.5" fill="currentColor" />
-      ) : (
-        <circle cx="5" cy="5" r="4" fill="none" stroke="currentColor" strokeWidth="1" />
-      )}
-      {status === "parsing" && <path d="M5 1 A4 4 0 0 1 5 9 Z" fill="currentColor" />}
-      {status === "failed" && (
-        <path d="M2.2 2.2 L7.8 7.8 M7.8 2.2 L2.2 7.8" stroke="currentColor" strokeWidth="1" />
-      )}
-    </svg>
-  );
-}
+// Loaded before rendering, and the clock read here: stale and "3m ago" are
+// facts about the moment of the request, worked out once. Nothing ticks in
+// the browser.
+async function loadRows(): Promise<RowData[]> {
+  // No organization filter: the row policy scopes this to the organization on
+  // the token. Switching organization changes the token, not this query.
+  const supabase = await createServerSupabase();
+  const { data: analyses, error } = await supabase
+    .from("analyses")
+    .select("id, status, stage, stage_message, commit_sha, error, created_at, started_at, finished_at, projects(repo_owner, repo_name)")
+    .order("created_at", { ascending: false })
+    .limit(LIST_LIMIT);
+  if (error) throw new Error(`Couldn't load analyses: ${error.message}`);
 
-// Relative rather than a clock time: the server doesn't know the viewer's
-// timezone, and "3h ago" is right everywhere. Exact time is in the title.
-function ago(iso: string): string {
-  const seconds = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 48) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
+  await connection();
+  const now = Date.now();
+  return analyses.map((a) => ({
+    id: a.id,
+    repository: a.projects ? { owner: a.projects.repo_owner, name: a.projects.repo_name } : null,
+    commitSha: a.commit_sha,
+    progress: { status: a.status, stage: a.stage, message: a.status === "failed" ? a.error : a.stage_message },
+    staleAtRender: isStale(a, now),
+    created: { iso: a.created_at, ago: ago(a.created_at, now) },
+    finished: a.finished_at ? { iso: a.finished_at, ago: ago(a.finished_at, now) } : null,
+  }));
 }

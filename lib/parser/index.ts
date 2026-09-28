@@ -14,15 +14,25 @@ import {
   type SkippedFile,
   type StatusCounts,
 } from "./types.ts";
-import { walkRepository } from "./walk.ts";
+import { walkRepository, type WalkResult } from "./walk.ts";
+
+export type Selection = { root: string; walk: WalkResult };
 
 export function parseRepository(directory: string): ParseResult {
+  return parseSelection(selectFiles(directory));
+}
+
+// Selecting and parsing are separate calls so a caller can report which one
+// it's in; together they are exactly parseRepository.
+export function selectFiles(directory: string): Selection {
   const root = path.resolve(directory);
   if (!statSync(root, { throwIfNoEntry: false })?.isDirectory()) {
     throw new Error(`Not a directory: ${root}`);
   }
+  return { root, walk: walkRepository(root) };
+}
 
-  const walk = walkRepository(root);
+export function parseSelection({ root, walk }: Selection): ParseResult {
 
   // Parsing only: no lib, no type resolution. Imports are resolved separately
   // so every outcome can be classified rather than left to the compiler.
