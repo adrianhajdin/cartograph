@@ -9,6 +9,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { deserializeParseResult, serializeParseResult } from "../lib/parser/contract.ts";
 import { parseRepository } from "../lib/parser/index.ts";
 import type { ParseResult, StatusCounts, UnresolvedImport } from "../lib/parser/types.ts";
+import { railCategories, railLabel } from "../lib/roles.ts";
 
 const EXAMPLES_PER_REASON = 5;
 
@@ -60,6 +61,8 @@ function printSummary(result: ParseResult, all: boolean): void {
   const byReason = new Map<string, number>();
   for (const f of reached) if (f.reachedBy) byReason.set(f.reachedBy, (byReason.get(f.reachedBy) ?? 0) + 1);
   console.log(`Reached without an import  ${reached.length}${[...byReason].map(([r, n]) => `\n  ${n}  ${r}`).join("")}`);
+  const rail = railCategories(result.projects.map((p) => p.adapter), result.files.map((f) => f.role));
+  console.log(`Rail      ${rail.map((c) => `${railLabel(c.key)} ${c.count}`).join(" · ")}`);
   if (files.excludedDirectories.length) {
     console.log(`Not walked  ${files.excludedDirectories.map((d) => `${d.path} (${d.reason})`).join(", ")}`);
   }
@@ -73,6 +76,13 @@ function printSummary(result: ParseResult, all: boolean): void {
   if (excluded.length) console.log(`Excluded  ${excluded.map(([reason, n]) => `${reason} ${n}`).join("  ")}`);
 
   console.log(`Edges     ${result.edges.length} after removing duplicates (${result.edges.filter((e) => e.typeOnly).length} type-only)`);
+
+  const { routes } = result.coverage;
+  console.log(`\nRoutes    ${result.routes.length}`);
+  for (const r of all ? result.routes : result.routes.slice(0, 40)) console.log(`  ${r.method.padEnd(7)} ${r.pattern.padEnd(40)} ${r.file}:${r.line}`);
+  if (!all && result.routes.length > 40) console.log(`  … ${result.routes.length - 40} more (--all)`);
+  for (const w of routes.withheld) console.log(`  withheld in ${w.project}: ${w.reason}`);
+  for (const o of routes.omitted) console.log(`  omitted ${o.file}:${o.line} — ${o.reason}`);
 
   if (imports.unresolved.length) {
     console.log(`\nUnresolved (${imports.unresolved.length})`);

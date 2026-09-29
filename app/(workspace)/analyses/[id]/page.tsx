@@ -5,6 +5,7 @@ import { AnalysisHeader } from "@/components/analysis-header";
 import { AnalysisView } from "@/components/analysis-view";
 import { AnalysisProgress } from "@/components/progress/analysis-progress";
 import { loadStoredAnalysis } from "@/lib/analysis/load";
+import { SCHEMA_VERSION } from "@/lib/parser/types";
 import { isStale } from "@/lib/pipeline/stages";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { ago } from "@/lib/time";
@@ -28,6 +29,8 @@ export default async function AnalysisPage({ params }: PageProps<"/analyses/[id]
         <AnalysisView
           files={result.files}
           edges={result.edges}
+          routes={result.routes}
+          routeCoverage={result.coverage.routes}
           repository={{
             name: header.repository.name,
             projects: result.projects,
@@ -39,6 +42,21 @@ export default async function AnalysisPage({ params }: PageProps<"/analyses/[id]
     );
   }
 
+  if (loaded.kind === "outdated") {
+    // Stored before the parser read roles and routes. Showing it would present
+    // every file as unclassified and the route table as empty, neither of
+    // which was checked.
+    return (
+      <div className="flex h-full flex-col">
+        <AnalysisHeader {...loaded.header} />
+        <div className="px-3 py-3 text-xs">
+          <p>This analysis was stored by an older version of the parser, which didn&apos;t read file roles or routes.</p>
+          <p className="mt-0.5 text-fg-muted">Re-run it to map it with the current one.</p>
+        </div>
+      </div>
+    );
+  }
+
   const { props } = loaded;
   // A fresh mount per server render, so "unchanged since render" restarts with it.
   return <AnalysisProgress key={`${props.initial.status}:${props.initial.stage}:${props.started?.iso}`} {...props} />;
@@ -46,6 +64,7 @@ export default async function AnalysisPage({ params }: PageProps<"/analyses/[id]
 
 type Loaded =
   | { kind: "map"; result: Awaited<ReturnType<typeof loadStoredAnalysis>>; header: ComponentProps<typeof AnalysisHeader> }
+  | { kind: "outdated"; header: ComponentProps<typeof AnalysisHeader> }
   | { kind: "progress"; props: ComponentProps<typeof AnalysisProgress> };
 
 async function loadAnalysis(id: string): Promise<Loaded | null> {
@@ -54,7 +73,7 @@ async function loadAnalysis(id: string): Promise<Loaded | null> {
   const supabase = await createServerSupabase();
   const { data: analysis, error } = await supabase
     .from("analyses")
-    .select("id, status, stage, stage_message, error, commit_sha, coverage, detected_projects, created_at, started_at, project:projects(repo_owner, repo_name)")
+    .select("id, status, stage, stage_message, error, commit_sha, schema_version, coverage, detected_projects, created_at, started_at, project:projects(repo_owner, repo_name)")
     .eq("id", id)
     .maybeSingle();
   if (error) throw new Error(`Couldn't load analysis: ${error.message}`);
@@ -62,13 +81,15 @@ async function loadAnalysis(id: string): Promise<Loaded | null> {
   const repository = { owner: analysis.project.repo_owner, name: analysis.project.repo_name };
 
   if (analysis.status === "complete" && analysis.commit_sha) {
+    const header = { analysisId: analysis.id, repository, commitSha: analysis.commit_sha };
+    if (analysis.schema_version !== SCHEMA_VERSION) return { kind: "outdated", header };
     const result = await loadStoredAnalysis(supabase, {
       id: analysis.id,
       label: `${repository.owner}/${repository.name}`,
       coverage: analysis.coverage,
       projects: analysis.detected_projects,
     });
-    return { kind: "map", result, header: { analysisId: analysis.id, repository, commitSha: analysis.commit_sha } };
+    return { kind: "map", result, header };
   }
 
   // Stale is a fact about the moment of the request, worked out once here.

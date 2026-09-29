@@ -227,7 +227,6 @@ function Meta(props: {
     <span className="flex items-center gap-[8px] text-[10px] leading-[12px] text-fg-muted tabular-nums">
       {match ? (
         <span className="flex items-center gap-[4px]" title={`${match.count} of ${fileCount} files match`}>
-          <CategorySwatch category={match.category} />
           <span>
             <span className="text-fg">{match.count}</span>/{fileCount} {fileCount === 1 ? "file" : "files"}
           </span>

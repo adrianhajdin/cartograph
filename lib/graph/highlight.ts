@@ -1,5 +1,4 @@
 import type { Edge } from "../parser/types.ts";
-import { categoryOf } from "./categories.ts";
 import type { MapView } from "./view.ts";
 
 // What stays at full strength for a selection: the selected thing, its edges,
@@ -86,12 +85,17 @@ export type CategoryFocus = {
 // What a rail category leaves bright. Every file is counted once, against
 // whatever stands for it on the canvas, so the objects' counts always add up
 // to the rail's.
-export function categoryFocus(view: MapView, category: string | null): CategoryFocus | null {
+export function categoryFocus(
+  view: MapView,
+  category: string | null,
+  /** Each file's rail category. */
+  categoryOf: ReadonlyMap<string, string>,
+): CategoryFocus | null {
   if (category === null) return null;
   const endpoints = new Set<string>();
   const counts = new Map<string, number>();
   for (const [path, at] of view.endpointOf) {
-    if (categoryOf(path) !== category) continue;
+    if (categoryOf.get(path) !== category) continue;
     endpoints.add(endpointKey(at.object, at.handle));
     counts.set(at.object, (counts.get(at.object) ?? 0) + 1);
   }

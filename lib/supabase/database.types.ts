@@ -28,6 +28,7 @@ export type Database = {
           id: string
           organization_id: string
           project_id: string
+          schema_version: number | null
           stage: Database["public"]["Enums"]["analysis_stage"] | null
           stage_message: string | null
           started_at: string | null
@@ -43,6 +44,7 @@ export type Database = {
           id?: string
           organization_id: string
           project_id: string
+          schema_version?: number | null
           stage?: Database["public"]["Enums"]["analysis_stage"] | null
           stage_message?: string | null
           started_at?: string | null
@@ -58,6 +60,7 @@ export type Database = {
           id?: string
           organization_id?: string
           project_id?: string
+          schema_version?: number | null
           stage?: Database["public"]["Enums"]["analysis_stage"] | null
           stage_message?: string | null
           started_at?: string | null
@@ -380,6 +383,7 @@ export type Database = {
           analysis_id: string
           file_id: string
           id: string
+          line: number
           method: string
           organization_id: string
           path: string
@@ -388,6 +392,7 @@ export type Database = {
           analysis_id: string
           file_id: string
           id?: string
+          line: number
           method: string
           organization_id: string
           path: string
@@ -396,6 +401,7 @@ export type Database = {
           analysis_id?: string
           file_id?: string
           id?: string
+          line?: number
           method?: string
           organization_id?: string
           path?: string
@@ -431,6 +437,14 @@ export type Database = {
     Functions: {
       insert_edges: {
         Args: { p_analysis_id: string; p_edges: Json }
+        Returns: number
+      }
+      insert_file_roles: {
+        Args: { p_analysis_id: string; p_roles: Json }
+        Returns: number
+      }
+      insert_routes: {
+        Args: { p_analysis_id: string; p_routes: Json }
         Returns: number
       }
     }

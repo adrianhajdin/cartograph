@@ -1,7 +1,9 @@
 // The shape the parser writes. Everything built after the parser reads this,
 // so changing it means bumping SCHEMA_VERSION and updating the validator.
 
-export const SCHEMA_VERSION = 2;
+import type { Role } from "../roles.ts";
+
+export const SCHEMA_VERSION = 3;
 
 export type EdgeKind = "import" | "re-export" | "dynamic-import";
 
@@ -26,6 +28,8 @@ export type ParsedFile = {
    * import would.
    */
   reachedBy: string | null;
+  /** The role a convention of its project's adapter gives it. Null when none does. */
+  role: Role | null;
 };
 
 /** The repository root, and every folder below it whose package.json a framework adapter detected. */
@@ -45,6 +49,22 @@ export type Edge = {
   specifier: string;
   line: number;
 };
+
+/** One method on one pattern, both read from the syntax. */
+export type Route = {
+  /** The file that declares it. */
+  file: string;
+  /** Upper case, as the framework spells it: GET, POST, ALL. */
+  method: string;
+  /** The full path pattern in the framework's own syntax: /users/:id, /blog/[slug]. */
+  pattern: string;
+  /** Where it's declared: the export or the decorator. */
+  line: number;
+};
+
+export type OmittedRoute = { file: string; line: number; reason: string };
+
+export type WithheldRoutes = { project: string; reason: string };
 
 export type SkipReason =
   | "declaration-file"
@@ -122,6 +142,12 @@ export type Coverage = {
     /** Every failure, not a sample. */
     unresolved: UnresolvedImport[];
   };
+  routes: {
+    /** Route declarations left out because the method or the full pattern isn't written in the syntax. */
+    omitted: OmittedRoute[];
+    /** Projects where something sets every pattern at runtime, so none of their routes is listed. */
+    withheld: WithheldRoutes[];
+  };
 };
 
 export type ConfigReport = {
@@ -139,6 +165,8 @@ export type ParseResult = {
   projects: Project[];
   files: ParsedFile[];
   edges: Edge[];
+  /** Sorted by pattern, then method. */
+  routes: Route[];
   coverage: Coverage;
   configs: ConfigReport[];
 };

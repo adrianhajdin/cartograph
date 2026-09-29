@@ -18,7 +18,7 @@ export async function loadStoredAnalysis(db: Db, analysis: { id: string; label: 
   const files = await readAll((from, to) =>
     db
       .from("files")
-      .select("id, path, module, lines, bytes, hash, fan_in, fan_out, reached_by, skip_reason, skip_detail")
+      .select("id, path, module, lines, bytes, hash, fan_in, fan_out, reached_by, skip_reason, skip_detail, file_roles(role)")
       .eq("analysis_id", analysis.id)
       .order("id")
       .range(from, to),
@@ -30,6 +30,10 @@ export async function loadStoredAnalysis(db: Db, analysis: { id: string; label: 
       .eq("analysis_id", analysis.id)
       .order("id")
       .range(from, to),
+  );
+
+  const routes = await readAll((from, to) =>
+    db.from("routes").select("file_id, method, path, line").eq("analysis_id", analysis.id).order("id").range(from, to),
   );
 
   const pathOf = new Map(files.map((f) => [f.id, f.path]));
@@ -52,6 +56,8 @@ export async function loadStoredAnalysis(db: Db, analysis: { id: string; label: 
         fanIn: f.fan_in,
         fanOut: f.fan_out,
         reachedBy: f.reached_by,
+        // One row at most: file_id is unique in file_roles.
+        role: f.file_roles[0]?.role ?? null,
       }))
       .sort((a, b) => a.path.localeCompare(b.path)),
     edges: edges.map((e) => ({
@@ -62,6 +68,9 @@ export async function loadStoredAnalysis(db: Db, analysis: { id: string; label: 
       specifier: e.specifier,
       line: e.line,
     })),
+    routes: routes
+      .map((r) => ({ file: pathOf.get(r.file_id), method: r.method, pattern: r.path, line: r.line }))
+      .sort((a, b) => a.pattern.localeCompare(b.pattern) || a.method.localeCompare(b.method) || (a.file ?? "").localeCompare(b.file ?? "")),
     coverage: {
       ...coverage,
       files: {

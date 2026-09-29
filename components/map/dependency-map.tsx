@@ -20,6 +20,7 @@ import {
   type Selection,
 } from "@/lib/graph/highlight";
 import { buildView } from "@/lib/graph/view";
+import { UNCLASSIFIED } from "@/lib/roles";
 import type { Edge, ParsedFile } from "@/lib/parser/types";
 import { layout, type Box } from "./layout";
 import {
@@ -50,7 +51,7 @@ export type MapControl = {
   hover: Selection;
   /** Changes whenever an open should refit the view to the new layout. */
   refit: number;
-  /** The rail category left bright, or null for all of them. */
+  /** The rail category (a role, or unclassified) left bright, or null for all of them. */
   category: string | null;
   onOpen: (id: string) => void;
   onClose: (id: string) => void;
@@ -88,7 +89,8 @@ function MapCanvas({
   const boxes = useMemo(() => layout(view.objects, view.edges), [view]);
   const lit = useMemo(() => highlightFor(view, edges, selection), [view, edges, selection]);
   const hovered = useMemo(() => hoverEndpoint(view, hover), [view, hover]);
-  const focus = useMemo(() => categoryFocus(view, category), [view, category]);
+  const railKeys = useMemo(() => new Map(files.map((f) => [f.path, f.role ?? UNCLASSIFIED])), [files]);
+  const focus = useMemo(() => categoryFocus(view, category, railKeys), [view, category, railKeys]);
 
   const nodes = useMemo(
     () =>

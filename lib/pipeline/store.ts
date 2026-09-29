@@ -9,6 +9,8 @@ type Db = SupabaseClient<Database>;
 // failure part-way marks the run failed.
 const FILE_CHUNK = 1000;
 const EDGE_CHUNK = 2000;
+const ROLE_CHUNK = 2000;
+const ROUTE_CHUNK = 2000;
 
 // The skipped-file list lives in the files table; storing it twice would let
 // the two disagree.
@@ -58,6 +60,17 @@ export async function storeResult(db: Db, analysis: { id: string; organizationId
   for (let i = 0; i < edges.length; i += EDGE_CHUNK) {
     const { error } = await db.rpc("insert_edges", { p_analysis_id: analysis.id, p_edges: edges.slice(i, i + EDGE_CHUNK) });
     if (error) throw new Error(`Storing edges failed: ${error.message}`);
+  }
+
+  // Roles and routes go with their files too, and are matched to them by path the same way.
+  const roles = result.files.flatMap((f) => (f.role === null ? [] : [{ path: f.path, role: f.role }]));
+  for (let i = 0; i < roles.length; i += ROLE_CHUNK) {
+    const { error } = await db.rpc("insert_file_roles", { p_analysis_id: analysis.id, p_roles: roles.slice(i, i + ROLE_CHUNK) });
+    if (error) throw new Error(`Storing roles failed: ${error.message}`);
+  }
+  for (let i = 0; i < result.routes.length; i += ROUTE_CHUNK) {
+    const { error } = await db.rpc("insert_routes", { p_analysis_id: analysis.id, p_routes: result.routes.slice(i, i + ROUTE_CHUNK) });
+    if (error) throw new Error(`Storing routes failed: ${error.message}`);
   }
 }
 

@@ -31,8 +31,15 @@ const TEST_FILE = /\.(test|spec)\.[cm]?[jt]sx?$/;
 const TEST_DIR = /(^|\/)__tests__\//;
 
 export function toolConventions(path: string): string | null {
+  const role = toolRole(path);
+  if (role === "config") return "config file, loaded by its tool";
+  if (role === "test") return "test file, collected by the test runner";
+  return null;
+}
+
+export function toolRole(path: string): "config" | "test" | null {
   const name = path.slice(path.lastIndexOf("/") + 1);
-  if (CONFIG_FILE.test(name) || RC_FILE.test(name)) return "config file, loaded by its tool";
-  if (TEST_FILE.test(name) || TEST_DIR.test(path)) return "test file, collected by the test runner";
+  if (CONFIG_FILE.test(name) || RC_FILE.test(name)) return "config";
+  if (TEST_FILE.test(name) || TEST_DIR.test(path)) return "test";
   return null;
 }

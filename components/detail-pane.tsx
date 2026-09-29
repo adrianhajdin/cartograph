@@ -9,6 +9,7 @@ import { findInsights, INSIGHT_SENTENCES, type Cycle } from "@/lib/graph/insight
 import { adjacency, DEFAULT_DEPTH, reach, type Adjacency, type Direction } from "@/lib/graph/reach";
 import { groupFan, groupId } from "@/lib/graph/view";
 import type { Edge, ParsedFile, Project } from "@/lib/parser/types";
+import { railLabel, UNCLASSIFIED } from "@/lib/roles";
 import { CategorySwatch } from "./map/swatch";
 
 export type Tab = "structure" | "explanation";
@@ -20,6 +21,8 @@ export type RepositoryFacts = {
   projects: Project[];
   skipped: number;
   unresolved: number;
+  /** Routes the adapters recovered exactly. */
+  routes: number;
 };
 
 type Props = {
@@ -131,9 +134,12 @@ function RepositorySummary({
           note={repository.unresolved > 0 ? `${repository.unresolved} unresolved` : null}
           title="Distinct file-to-file imports resolved inside this repository"
         />
-        {/* The parse output carries no routes: nothing recovers a method and a
-            full path yet, and zero would claim something never checked. */}
-        <Count label="Routes" value={null} note="not recovered" title="Routes aren't recovered from the code yet" />
+        <Count
+          label="Routes"
+          value={repository.routes}
+          note={null}
+          title="Routes whose method and full path are both written in the code"
+        />
       </dl>
 
       <RankedList
@@ -398,6 +404,9 @@ function FileStructure(props: {
             <CategorySwatch category={category} />
             {categoryLabel(category)}
           </span>
+        </Fact>
+        <Fact label="Role">
+          {file.role === null ? <span className="text-fg-muted">{railLabel(UNCLASSIFIED).toLowerCase()}</span> : railLabel(file.role)}
         </Fact>
         <Fact label="Folder">
           <span className="font-mono break-all">{file.module}</span>

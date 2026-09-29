@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { parseSelection, selectFiles } from "../parser/index.ts";
+import { SCHEMA_VERSION } from "../parser/types.ts";
 import type { Database, Enums } from "../supabase/database.types.ts";
 import { downloadArchive, resolveHeadCommit, type Repository } from "./github.ts";
 import { STALE_AFTER_MS } from "./stages.ts";
@@ -42,7 +43,12 @@ export async function continueRun(db: Db, { analysisId, organizationId, reposito
     await enter(db, analysisId, "parse", `Parsing ${count(candidates.length, "file")}${skipped.length ? `, ${skipped.length} skipped` : ""}`);
     const result = parseSelection(selection);
 
-    await enter(db, analysisId, "store", `Storing ${count(result.coverage.files.found, "file")} and ${count(result.edges.length, "edge")}`);
+    await enter(
+      db,
+      analysisId,
+      "store",
+      `Storing ${count(result.coverage.files.found, "file")}, ${count(result.edges.length, "edge")} and ${count(result.routes.length, "route")}`,
+    );
     await storeResult(db, { id: analysisId, organizationId }, result);
 
     await update(db, analysisId, {
@@ -50,6 +56,7 @@ export async function continueRun(db: Db, { analysisId, organizationId, reposito
       finished_at: new Date().toISOString(),
       coverage: storedCoverage(result.coverage),
       detected_projects: result.projects,
+      schema_version: SCHEMA_VERSION,
       stage_message: `Mapped ${count(result.files.length, "file")} and ${count(result.edges.length, "edge")}`,
     });
   } catch (error) {
@@ -85,6 +92,7 @@ export async function claimAnalysis(db: Db, analysisId: string): Promise<Claimed
       error: null,
       coverage: null,
       detected_projects: null,
+      schema_version: null,
     })
     .eq("id", analysisId)
     .or(`status.neq.running,started_at.lt.${staleBefore}`)

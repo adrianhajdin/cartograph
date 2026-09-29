@@ -21,6 +21,8 @@ export type CandidateFile = {
   lines: number;
   hash: string;
   reachedBy: string | null;
+  /** Path of the project the file belongs to. */
+  project: string;
 };
 
 export type WalkResult = {
@@ -32,9 +34,18 @@ export type WalkResult = {
   /** Package names declared by package.json files inside the repository. */
   workspacePackages: Set<string>;
   projects: Project[];
+  /** Each project's adapter, by project path. */
+  adapters: Map<string, FrameworkAdapter>;
+  /** The project of every file found, parsed or skipped. */
+  projectOf: Map<string, string>;
 };
 
 type CurrentProject = { path: string; adapter: FrameworkAdapter };
+
+// Paths handed to an adapter are relative to its project.
+export function withinProject(project: string, relativePath: string): string {
+  return project === "." ? relativePath : relativePath.slice(project.length + 1);
+}
 
 export function toPosix(p: string): string {
   return p.split(path.sep).join("/");
@@ -75,11 +86,11 @@ export function walkRepository(root: string): WalkResult {
     found: 0,
     workspacePackages: new Set(),
     projects: [],
+    adapters: new Map(),
+    projectOf: new Map(),
   };
 
-  // Paths handed to an adapter are relative to its project.
-  const within = (project: CurrentProject, relativePath: string) =>
-    project.path === "." ? relativePath : relativePath.slice(project.path.length + 1);
+  const within = (project: CurrentProject, relativePath: string) => withinProject(project.path, relativePath);
 
   const visit = (absoluteDir: string, parent: CurrentProject | null): void => {
     const entries = readdirSync(absoluteDir, { withFileTypes: true }).sort((a, b) =>
@@ -98,6 +109,7 @@ export function walkRepository(root: string): WalkResult {
       if (!parent || adapter !== fallbackAdapter) {
         project = { path: toPosix(path.relative(root, absoluteDir)) || ".", adapter };
         result.projects.push({ path: project.path, adapter: adapter.name });
+        result.adapters.set(project.path, adapter);
       }
     }
     if (!project) throw new Error(`No project for ${absoluteDir}`);
@@ -123,6 +135,7 @@ export function walkRepository(root: string): WalkResult {
           result.excludedDirectories.push({ path: relativePath, reason: "symbolic link" });
         } else if (isCodeFile(entry.name)) {
           result.found++;
+          result.projectOf.set(relativePath, project.path);
           result.skipped.push({ path: relativePath, reason: "symlink", detail: "symbolic link not followed" });
         }
         continue;
@@ -130,13 +143,14 @@ export function walkRepository(root: string): WalkResult {
 
       if (!entry.isFile() || !isCodeFile(entry.name)) continue;
       result.found++;
+      result.projectOf.set(relativePath, project.path);
 
       if (isDeclarationFile(entry.name)) {
         result.skipped.push({ path: relativePath, reason: "declaration-file", detail: "types only, no runtime imports" });
         continue;
       }
 
-      const candidate = readCandidate(absolutePath, relativePath, project.adapter.reachedBy(within(project, relativePath)));
+      const candidate = readCandidate(absolutePath, relativePath, project.path, project.adapter.reachedBy(within(project, relativePath)));
       if ("reason" in candidate) result.skipped.push(candidate);
       else result.candidates.push(candidate);
     }
@@ -173,6 +187,7 @@ function readPackage(absolutePath: string): { name: string | null; dependencies:
 function readCandidate(
   absolutePath: string,
   relativePath: string,
+  project: string,
   reachedBy: string | null,
 ): CandidateFile | SkippedFile {
   let buffer: Buffer;
@@ -201,5 +216,6 @@ function readCandidate(
     lines: countLines(content),
     hash: createHash("sha256").update(buffer).digest("hex"),
     reachedBy,
+    project,
   };
 }

@@ -1,5 +1,6 @@
-// A file's category is its extension: a fact read off the path, not a guess
-// about what the file does. Role-based categories come from adapters later.
+// A file's kind is its extension: a fact read off the path, not a guess about
+// what the file does. It's what the map's swatches colour; the rail groups by
+// role instead.
 const NO_EXTENSION = "(none)";
 
 export function categoryOf(path: string): string {

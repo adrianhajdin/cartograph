@@ -1,3 +1,6 @@
+import type { SourceFile } from "ts-morph";
+import type { Framework, Role } from "../../roles.ts";
+
 // Framework knowledge enters the parser only through this interface. The parser
 // asks the adapter questions; it never checks which framework it is looking at.
 //
@@ -13,8 +16,32 @@ export type ProjectInfo = {
   dependencies: ReadonlySet<string>;
 };
 
+/** A file that parsed cleanly, with its syntax tree. */
+export type AdapterFile = { path: string; source: SourceFile };
+
+export type ProjectFiles = {
+  files: readonly AdapterFile[];
+  /** Code files in the project that were skipped, so their syntax is unknown. */
+  unparsed: readonly string[];
+};
+
+export type AdapterRoute = { path: string; method: string; pattern: string; line: number };
+
+export type RouteReport = {
+  routes: AdapterRoute[];
+  /** Something the syntax declares as a route, left out because its method or full pattern isn't written there. */
+  omitted: { path: string; line: number; reason: string }[];
+  /**
+   * Set when something project-wide makes every pattern uncertain, such as a
+   * prefix computed at runtime. Then no route is listed at all.
+   */
+  withheld: string | null;
+};
+
+export const NO_ROUTES: RouteReport = { routes: [], omitted: [], withheld: null };
+
 export interface FrameworkAdapter {
-  name: string;
+  name: Framework;
   /** Whether this adapter applies to the project. */
   detect(project: ProjectInfo): boolean;
   /**
@@ -30,4 +57,12 @@ export interface FrameworkAdapter {
    * convention the file sits in, never a guess about what it does.
    */
   reachedBy(projectRelativePath: string): string | null;
+  /**
+   * The file's role from a convention: where it sits, what it's named, or a
+   * directive or syntax it contains. Null when none applies; the file stays
+   * unclassified rather than getting the nearest fit.
+   */
+  roleOf(file: AdapterFile): Role | null;
+  /** Routes whose method and full pattern are both written in the syntax. */
+  routes(project: ProjectFiles): RouteReport;
 }
