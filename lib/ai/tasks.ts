@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import { isModelRole, MODEL_ROLES, type ModelRole } from "../roles.ts";
-import { traceable } from "langsmith/traceable";
-import { ai, MODELS, traceConfig } from "./client.ts";
+import type { RunTree } from "langsmith";
+import { getCurrentRunTree, traceable } from "langsmith/traceable";
+import { ai, MODELS, traceConfig, tracingStatus } from "./client.ts";
+import { checkPaths, PATH_CHECK_KEY, shownForFile, shownForFolder, type PathCheck } from "./paths.ts";
 import {
   CLASSIFY_SYSTEM,
   classifyMessage,
@@ -26,7 +28,21 @@ export type Cache = {
   write: (entry: { key: string; task: Task; model: string; body: string }) => Promise<void>;
 };
 
-export type Explanation = { body: string; model: string; cached: boolean };
+export type Explanation = {
+  body: string;
+  model: string;
+  cached: boolean;
+  /** The invented-path check, run on every answer, cached ones included. */
+  paths: PathCheck;
+  /**
+   * Stores the check as feedback on this answer's run, so real traffic is
+   * scored in the dashboard. Separate so the caller can run it after the
+   * response; a no-op when tracing is off.
+   */
+  recordPaths: () => Promise<void>;
+};
+
+type Answered = Omit<Explanation, "recordPaths">;
 
 // The source is only fetched on a miss: a hit answers from the stored hash alone.
 export type SourceOf = () => Promise<string>;
@@ -42,28 +58,65 @@ export function cacheKey(task: Task, model: string, input: unknown): string {
 
 export async function explainFile(input: FileInput, deps: { cache: Cache; source: SourceOf }): Promise<Explanation> {
   const model = MODELS.explain;
-  const run = traceable(async (question: FileInput): Promise<Explanation> => {
+  let tree: RunTree | undefined;
+  const run = traceable(async (question: FileInput): Promise<Answered> => {
+    tree = getCurrentRunTree(true);
     const key = cacheKey("explain-file", model, question);
     const hit = await deps.cache.read(key);
-    if (hit !== null) return { body: hit, model, cached: true };
-    const body = await complete(model, EXPLAIN_FILE_SYSTEM, explainFileMessage(question, capped(await deps.source())));
-    await deps.cache.write({ key, task: "explain-file", model, body });
-    return { body, model, cached: false };
+    const body = hit ?? (await complete(model, EXPLAIN_FILE_SYSTEM, explainFileMessage(question, capped(await deps.source()))));
+    if (hit === null) await deps.cache.write({ key, task: "explain-file", model, body });
+    return { body, model, cached: hit !== null, paths: checkPaths(body, shownForFile(question)) };
   }, traceConfig("explain-file"));
-  return run(input);
+  const answer = await run(input);
+  return { ...answer, recordPaths: () => recordPathCheck(tree, answer.paths) };
 }
 
 export async function explainFolder(input: FolderInput, deps: { cache: Cache }): Promise<Explanation> {
   const model = MODELS.explain;
-  const run = traceable(async (question: FolderInput): Promise<Explanation> => {
+  let tree: RunTree | undefined;
+  const run = traceable(async (question: FolderInput): Promise<Answered> => {
+    tree = getCurrentRunTree(true);
     const key = cacheKey("explain-folder", model, question);
     const hit = await deps.cache.read(key);
-    if (hit !== null) return { body: hit, model, cached: true };
-    const body = await complete(model, EXPLAIN_FOLDER_SYSTEM, explainFolderMessage(question));
-    await deps.cache.write({ key, task: "explain-folder", model, body });
-    return { body, model, cached: false };
+    const body = hit ?? (await complete(model, EXPLAIN_FOLDER_SYSTEM, explainFolderMessage(question)));
+    if (hit === null) await deps.cache.write({ key, task: "explain-folder", model, body });
+    return { body, model, cached: hit !== null, paths: checkPaths(body, shownForFolder(question)) };
   }, traceConfig("explain-folder"));
-  return run(input);
+  const answer = await run(input);
+  return { ...answer, recordPaths: () => recordPathCheck(tree, answer.paths) };
+}
+
+const projectIds = new Map<string, Promise<string>>();
+
+// Feedback is attached to the run the answer was traced as, so it waits for
+// that run to be sent first.
+async function recordPathCheck(tree: RunTree | undefined, check: PathCheck): Promise<void> {
+  if (!tree || !tracingStatus().on) return;
+  const { client, project_name } = tree;
+  let projectId = projectIds.get(project_name);
+  if (!projectId) {
+    // A failed lookup isn't kept, so the next answer's feedback tries again.
+    projectId = client.readProject({ projectName: project_name }).then(
+      (p) => p.id,
+      (error: unknown) => {
+        projectIds.delete(project_name);
+        throw error;
+      },
+    );
+    projectIds.set(project_name, projectId);
+  }
+  await client.awaitPendingTraceBatches();
+  await client.createFeedback({
+    runId: tree.id,
+    sessionId: await projectId,
+    ...(tree.trace_id !== tree.id ? { traceId: tree.trace_id } : {}),
+    startTime: tree.start_time,
+    key: PATH_CHECK_KEY,
+    score: check.invented.length === 0 ? 1 : 0,
+    value: check.invented.length,
+    comment: check.invented.length ? `Not shown to the model: ${check.invented.join(", ")}` : `${check.mentioned.length} paths named, all shown`,
+    feedbackSourceType: "app",
+  });
 }
 
 // "none" is a real answer, and cached like any other: the model wasn't made
@@ -123,7 +176,9 @@ function readRole(content: string | null): string {
   return role;
 }
 
-async function complete(model: string, system: string, user: string): Promise<string> {
+// Exported so an eval can ask the same model in the same way under a retired
+// prompt; the app only ever calls it with its own.
+export async function complete(model: string, system: string, user: string): Promise<string> {
   const response = await ai().chat.completions.create({
     model,
     messages: [
@@ -138,7 +193,7 @@ async function complete(model: string, system: string, user: string): Promise<st
   return body;
 }
 
-function capped(source: string): string {
+export function capped(source: string): string {
   if (source.length <= MAX_SOURCE_CHARS) return source;
   const kept = source.slice(0, MAX_SOURCE_CHARS);
   return `${kept}\n[… source truncated here: ${source.length - MAX_SOURCE_CHARS} more characters not shown]`;

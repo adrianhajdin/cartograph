@@ -1,6 +1,7 @@
 "use server";
 
 import { createHash } from "node:crypto";
+import { after } from "next/server";
 import { tracingStatus, type TracingStatus } from "@/lib/ai/client";
 import { classifyFile, explainFile, explainFolder, type Cache } from "@/lib/ai/tasks";
 import { loadFileInput, loadFolderInput } from "@/lib/analysis/context";
@@ -56,8 +57,9 @@ export async function explainFileAction(analysisId: string, path: string): Promi
       }
     }
 
-    const answer = await explainFile(input, { cache, source });
-    return { ok: true, ...answer, tracing: tracingStatus(), labelled, labelError };
+    const { body, model, cached, recordPaths } = await explainFile(input, { cache, source });
+    after(() => recordPaths().catch((error) => console.error(`Recording the path check for ${path} failed:`, error)));
+    return { ok: true, body, model, cached, tracing: tracingStatus(), labelled, labelError };
   } catch (error) {
     console.error(`Explaining ${path} failed:`, error);
     return { ok: false, error: messageOf(error) };
@@ -70,8 +72,9 @@ export async function explainFolderAction(analysisId: string, dir: string): Prom
     const analysis = await readAnalysis(db, analysisId);
     const input = await loadFolderInput(db, analysis.id, dir);
     if (!input) return { ok: false, error: `${dir} isn't a folder on this map` };
-    const answer = await explainFolder(input, { cache: cacheFor(db, analysis.organizationId) });
-    return { ok: true, ...answer, tracing: tracingStatus(), labelled: null, labelError: null };
+    const { body, model, cached, recordPaths } = await explainFolder(input, { cache: cacheFor(db, analysis.organizationId) });
+    after(() => recordPaths().catch((error) => console.error(`Recording the path check for folder ${dir} failed:`, error)));
+    return { ok: true, body, model, cached, tracing: tracingStatus(), labelled: null, labelError: null };
   } catch (error) {
     console.error(`Explaining folder ${dir} failed:`, error);
     return { ok: false, error: messageOf(error) };

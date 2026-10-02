@@ -27,8 +27,11 @@ export async function loadFileInput(
     .maybeSingle();
   if (error) throw new Error(`Reading ${path} failed: ${error.message}`);
   if (!file) return null;
-  if (file.skip_reason !== null || file.hash === null || file.exports === null) {
+  if (file.skip_reason !== null || file.hash === null) {
     throw new Error(`${path} was skipped by the parser, so there's nothing parsed to explain`);
+  }
+  if (file.exports === null) {
+    throw new Error(`${path} was stored by an older parser that didn't record exports; re-run the analysis to explain it`);
   }
 
   const edges = await readAll((from, to) =>
