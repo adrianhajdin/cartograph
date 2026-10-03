@@ -85,7 +85,8 @@ export async function repositoryHeadAction(analysisId: string): Promise<HeadResu
   try {
     const analysis = await readAnalysis(await createServerSupabase(), analysisId);
     const { userId } = await auth();
-    const token = await getGitHubToken(userId);
+    const tokenResult = await getGitHubToken(userId);
+    const token = tokenResult.ok ? (tokenResult.token ?? undefined) : undefined;
     return { ok: true, head: await resolveHeadCommit(analysis.repository, token), analysed: analysis.commitSha };
   } catch (error) {
     return { ok: false, error: messageOf(error) };
@@ -103,7 +104,8 @@ export async function fileAtHeadAction(analysisId: string, path: string, head: s
     if (error) throw new Error(`Reading ${path} failed: ${error.message}`);
     if (!file?.hash) return { ok: false, error: `${path} isn't a parsed file in this analysis` };
     const { userId } = await auth();
-    const token = await getGitHubToken(userId);
+    const tokenResult = await getGitHubToken(userId);
+    const token = tokenResult.ok ? (tokenResult.token ?? undefined) : undefined;
     const bytes = await fetchFileAt(analysis.repository, head, path, token);
     if (bytes === null) return { ok: true, state: "deleted" };
     return { ok: true, state: sha256(bytes) === file.hash ? "unchanged" : "changed" };
@@ -166,7 +168,8 @@ function sourceAtAnalysedCommit(analysis: Analysis, path: string, hash: string):
   return () => {
     pending ??= (async () => {
       const { userId } = await auth();
-      const token = await getGitHubToken(userId);
+      const tokenResult = await getGitHubToken(userId);
+      const token = tokenResult.ok ? (tokenResult.token ?? undefined) : undefined;
       const bytes = await fetchFileAt(analysis.repository, analysis.commitSha, path, token);
       if (bytes === null) throw new Error(`GitHub has no ${path} at ${analysis.commitSha.slice(0, 7)}, the commit that was analysed`);
       if (sha256(bytes) !== hash) throw new Error(`GitHub's copy of ${path} at ${analysis.commitSha.slice(0, 7)} isn't what was parsed`);

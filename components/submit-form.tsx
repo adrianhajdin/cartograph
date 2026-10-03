@@ -7,12 +7,13 @@ import { useClerk, useUser } from "@clerk/nextjs";
 
 const INITIAL: FormState = { error: null };
 
-export function SubmitForm({ hasGitHubToken }: { hasGitHubToken?: boolean }) {
+export function SubmitForm({ hasGitHubToken: initialHasGitHubToken }: { hasGitHubToken?: boolean } = {}) {
   const [state, action, pending] = useActionState(submitAnalysis, INITIAL);
   const [query, setQuery] = useState("");
   const [isOpen, setIsOpen] = useState(false);
   const [filter, setFilter] = useState<"all" | "private" | "public">("all");
   const [allRepos, setAllRepos] = useState<UserRepo[]>([]);
+  const [hasGitHubToken, setHasGitHubToken] = useState<boolean | null>(initialHasGitHubToken ?? null);
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [isPendingAuth, startAuthTransition] = useTransition();
@@ -33,11 +34,11 @@ export function SubmitForm({ hasGitHubToken }: { hasGitHubToken?: boolean }) {
   }, []);
 
   const loadRepositories = async () => {
-    if (!hasGitHubToken) return;
     setLoading(true);
     setFetchError(null);
     try {
       const res = await listUserRepositories();
+      setHasGitHubToken(res.hasGitHubToken);
       if (res.error) {
         setFetchError(res.error);
       }
@@ -51,8 +52,14 @@ export function SubmitForm({ hasGitHubToken }: { hasGitHubToken?: boolean }) {
 
   const handleFocus = () => {
     setIsOpen(true);
-    if (allRepos.length === 0 && hasGitHubToken && !loading) {
+    if (allRepos.length === 0 && !loading) {
       loadRepositories();
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Escape") {
+      setIsOpen(false);
     }
   };
 
@@ -114,6 +121,7 @@ export function SubmitForm({ hasGitHubToken }: { hasGitHubToken?: boolean }) {
             value={query}
             onChange={handleInputChange}
             onFocus={handleFocus}
+            onKeyDown={handleKeyDown}
             placeholder="github.com/owner/repo"
             aria-label="GitHub repository URL"
             aria-invalid={state.error ? true : undefined}
@@ -122,7 +130,7 @@ export function SubmitForm({ hasGitHubToken }: { hasGitHubToken?: boolean }) {
 
           {isOpen && (
             <div className="absolute left-0 top-7 z-50 w-96 max-h-80 overflow-hidden rounded border border-line bg-surface p-1 shadow-lg text-xs flex flex-col">
-              {!hasGitHubToken ? (
+              {hasGitHubToken === false ? (
                 <div className="p-3 text-center text-fg-muted flex flex-col items-center gap-2">
                   <p className="text-fg">Connect GitHub account</p>
                   <p className="text-[11px] leading-relaxed">
@@ -132,7 +140,7 @@ export function SubmitForm({ hasGitHubToken }: { hasGitHubToken?: boolean }) {
                     type="button"
                     onClick={handleConnectGitHub}
                     disabled={isPendingAuth}
-                    className="mt-1 rounded bg-accent px-3 py-1 text-xs text-accent-fg hover:opacity-90 disabled:opacity-60"
+                    className="mt-1 rounded bg-accent px-3 py-1 text-xs text-accent-fg hover:opacity-90 disabled:opacity-60 cursor-pointer"
                   >
                     {isPendingAuth ? "Connecting…" : "Connect GitHub"}
                   </button>
@@ -237,7 +245,7 @@ export function SubmitForm({ hasGitHubToken }: { hasGitHubToken?: boolean }) {
         </button>
       </form>
 
-      {!hasGitHubToken && (
+      {hasGitHubToken === false && (
         <button
           type="button"
           onClick={handleConnectGitHub}

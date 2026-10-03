@@ -4,7 +4,7 @@ import { auth } from "@clerk/nextjs/server";
 import { getGitHubToken } from "@/lib/github-token";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
-import { PipelineError } from "@/lib/pipeline/github";
+import { PipelineError, resolveHeadCommit } from "@/lib/pipeline/github";
 import { AlreadyRunningError, claimAnalysis, continueRun, type ClaimedRun } from "@/lib/pipeline/run";
 import { submitRepository } from "@/lib/pipeline/submit";
 import { createAdminSupabase } from "@/lib/supabase/admin";
@@ -27,7 +27,11 @@ export async function submitAnalysis(_previous: FormState, form: FormData): Prom
     const submission = await submitRepository(admin, orgId, url, userId);
     analysisId = submission.analysisId;
     if (submission.created) {
-      const token = await getGitHubToken(userId);
+      const tokenResult = await getGitHubToken(userId);
+      if (!tokenResult.ok) {
+        return { error: `Authentication provider error: ${tokenResult.error}` };
+      }
+      const token = tokenResult.token ?? undefined;
       const claimed = await claimAnalysis(admin, analysisId);
       claimed.token = token;
       start(claimed);
@@ -44,17 +48,30 @@ export async function rerunAnalysis(analysisId: string): Promise<FormState> {
   // Visibility is the policy's call: another organization's analysis isn't
   // there to re-run. The writer below bypasses policies, so this read comes first.
   const supabase = await createServerSupabase();
-  const { data, error } = await supabase.from("analyses").select("id").eq("id", analysisId).maybeSingle();
+  const { data, error } = await supabase
+    .from("analyses")
+    .select("id, projects(repo_owner, repo_name)")
+    .eq("id", analysisId)
+    .maybeSingle();
   if (error) throw new Error(`Couldn't read analysis: ${error.message}`);
-  if (!data) return { error: "Analysis not found" };
+  if (!data || !data.projects) return { error: "Analysis not found" };
 
   try {
     const userId = (await auth()).userId;
-    const token = await getGitHubToken(userId);
+    const tokenResult = await getGitHubToken(userId);
+    if (!tokenResult.ok) {
+      return { error: `Authentication provider error: ${tokenResult.error}` };
+    }
+    const token = tokenResult.token ?? undefined;
+
+    // Verify repository access and resolve HEAD before claiming the analysis row
+    await resolveHeadCommit({ owner: data.projects.repo_owner, name: data.projects.repo_name }, token);
+
     const claimed = await claimAnalysis(createAdminSupabase(), analysisId);
     claimed.token = token;
     start(claimed);
   } catch (error) {
+    if (error instanceof PipelineError) return { error: error.message };
     if (error instanceof AlreadyRunningError) return { error: "It's already running" };
     throw error;
   }

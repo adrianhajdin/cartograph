@@ -5,7 +5,7 @@
 
 ## Summary
 
-This decision extends Cartograph from public-only repositories to support private repositories. Users connect their GitHub account using Clerk OAuth to grant read-only repository permissions. The backend fetches private archives using authenticated GitHub API calls without storing permanent access tokens in custom database tables.
+This decision extends Cartograph from public-only repositories to support private repositories. Users connect their GitHub account using Clerk OAuth to grant repository access. GitHub's `repo` scope grants full read and write access to private repositories the user can access, while `read:org` grants read only organization membership access; Cartograph uses this access purely for read operations. The backend fetches private archives using authenticated GitHub API calls without storing permanent access tokens in custom database tables.
 
 ## Context
 
@@ -26,7 +26,7 @@ Key constraints:
 - As a team member, I want to trigger a re-analysis of a private repository using my own GitHub credentials so that our team map stays updated.
 
 **Acceptance criteria**:
-- **AC-1**: Users can connect their GitHub account with read-only repository scope (`repo` / `read:org`) through Clerk OAuth.
+- **AC-1**: Users can connect their GitHub account with repository permissions (`repo` for private repositories granting full read and write access, and `read:org` for read only organization membership access) through Clerk OAuth.
 - **AC-2**: The repository submission interface displays a searchable list of the user's public and private repositories alongside the direct URL input.
 - **AC-3**: The pipeline fetches private repository tarballs and commit metadata using an authenticated Bearer token via the GitHub REST API.
 - **AC-4**: If a user lacks private repository access or their token is revoked, the UI displays a clear inline error and re-authentication action.
@@ -95,7 +95,7 @@ Cartograph will retrieve GitHub OAuth tokens on demand via Clerk's server SDK du
 - Token retrieval requires an active authenticated Clerk session matching the caller.
 
 **Configuration required**:
-- Clerk Dashboard: Enable GitHub Social Connection with requested scopes (`repo`, `read:org`).
+- Clerk Dashboard: Enable GitHub Social Connection with requested scopes (`repo` granting private repository access and `read:org` for organization membership).
 
 **Critical test scenarios**:
 - Happy path: User connects GitHub, picks a private repo from the dropdown, and successfully renders the dependency map. Verifies **AC-1**, **AC-2**, **AC-3**, **AC-5**.
@@ -104,7 +104,7 @@ Cartograph will retrieve GitHub OAuth tokens on demand via Clerk's server SDK du
 
 ## Build plan
 
-1. Configure Clerk GitHub OAuth provider settings with repository read scopes, satisfies **AC-1**.
+1. Configure Clerk GitHub OAuth provider settings with requested scopes (`repo`, `read:org`), satisfies **AC-1**.
 2. Add `user_id` column to `analyses` table in Supabase migration, satisfies **AC-5**.
 3. Create server helper `getGitHubToken(userId)` using Clerk server SDK, satisfies **AC-1**, **AC-4**.
 4. Update `lib/pipeline/github.ts` to accept an optional auth token for commit resolution and tarball streaming, satisfies **AC-3**, **AC-6**.

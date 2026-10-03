@@ -26,7 +26,11 @@ export async function listUserRepositories(search?: string): Promise<{
   error?: string;
 }> {
   const { userId } = await auth();
-  const token = await getGitHubToken(userId);
+  const tokenResult = await getGitHubToken(userId);
+  if (!tokenResult.ok) {
+    return { repos: [], hasGitHubToken: false, error: `Failed to load GitHub credentials: ${tokenResult.error}` };
+  }
+  const token = tokenResult.token;
   if (!token) return { repos: [], hasGitHubToken: false };
 
   try {

@@ -28,7 +28,7 @@ let client: OpenAI | null = null;
 // that needed it with a message saying so, not the server's boot.
 export function ai(): OpenAI {
   if (client) return client;
-  const apiKey = process.env.GEMINI_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim();
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) throw new Error("GEMINI_API_KEY isn't set in .env.local, so nothing can be explained");
   client = wrapOpenAI(
     new OpenAI({
