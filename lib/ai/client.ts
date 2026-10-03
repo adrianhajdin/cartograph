@@ -8,8 +8,8 @@ import { wrapOpenAI } from "langsmith/wrappers/openai";
 // cached answer without changing its key. Each model is part of its own
 // tasks' cache keys, so re-pinning one invalidates only its own answers.
 export const MODELS = {
-  explain: "gpt-5.5-2026-04-23",
-  classify: "gpt-5.4-mini-2026-03-17",
+  explain: "gemini-2.5-flash",
+  classify: "gemini-2.5-flash",
 } as const;
 
 export type TracingStatus = { on: true; project: string } | { on: false; reason: string };
@@ -28,9 +28,15 @@ let client: OpenAI | null = null;
 // that needed it with a message saying so, not the server's boot.
 export function ai(): OpenAI {
   if (client) return client;
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
-  if (!apiKey) throw new Error("OPENAI_API_KEY isn't set in .env.local, so nothing can be explained");
-  client = wrapOpenAI(new OpenAI({ apiKey }), { tracingEnabled: tracingStatus().on });
+  const apiKey = process.env.GEMINI_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) throw new Error("GEMINI_API_KEY isn't set in .env.local, so nothing can be explained");
+  client = wrapOpenAI(
+    new OpenAI({
+      apiKey,
+      baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+    }),
+    { tracingEnabled: tracingStatus().on },
+  );
   return client;
 }
 

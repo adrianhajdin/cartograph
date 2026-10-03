@@ -3,6 +3,7 @@ import { connection } from "next/server";
 import { AnalysisRow, type RowData } from "@/components/progress/analysis-row";
 import { StateMark } from "@/components/state-mark";
 import { SubmitForm } from "@/components/submit-form";
+import { getGitHubToken } from "@/lib/github-token";
 import { isStale, type Status } from "@/lib/pipeline/stages";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { ago } from "@/lib/time";
@@ -12,7 +13,9 @@ type Tally = Status | "stale";
 const TALLY_ORDER: Tally[] = ["running", "queued", "stale", "complete", "failed"];
 
 export default async function DashboardPage() {
-  const { sessionClaims } = await auth();
+  const { sessionClaims, userId } = await auth();
+  const token = await getGitHubToken(userId);
+  const hasGitHubToken = !!token;
 
   // Read off the token, never fetched from Clerk. If the claim is missing the
   // session token hasn't been customised yet, and that should be obvious.
@@ -40,7 +43,7 @@ export default async function DashboardPage() {
             ? `Latest ${LIST_LIMIT} analyses`
             : `${rows.length} ${rows.length === 1 ? "analysis" : "analyses"}`}
         </span>
-        <SubmitForm />
+        <SubmitForm hasGitHubToken={hasGitHubToken} />
         {rows.length > 0 && (
           <ul className="ml-auto flex items-center gap-3 text-xs text-fg-muted tabular-nums">
             {TALLY_ORDER.filter((s) => counts.has(s)).map((s) => (
@@ -56,7 +59,7 @@ export default async function DashboardPage() {
       {rows.length === 0 ? (
         <div className="px-3 py-10 text-xs text-fg-muted">
           <p className="text-fg">No analyses yet.</p>
-          <p className="mt-1">Paste a public GitHub repository above to map it.</p>
+          <p className="mt-1">Paste or select a GitHub repository above to map it.</p>
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-auto">

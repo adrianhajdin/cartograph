@@ -1,6 +1,7 @@
 "use server";
 
 import { auth } from "@clerk/nextjs/server";
+import { getGitHubToken } from "@/lib/github-token";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { PipelineError } from "@/lib/pipeline/github";
@@ -15,7 +16,7 @@ export type FormState = { error: string | null };
 // already has one for the repository, goes to it without running anything.
 // The organization comes off the session token, never from the form.
 export async function submitAnalysis(_previous: FormState, form: FormData): Promise<FormState> {
-  const { orgId } = await auth();
+  const { orgId, userId } = await auth();
   if (!orgId) return { error: "No active organization" };
   const url = form.get("url");
   if (typeof url !== "string" || !url.trim()) return { error: "Paste a GitHub repository URL" };
@@ -23,9 +24,14 @@ export async function submitAnalysis(_previous: FormState, form: FormData): Prom
   const admin = createAdminSupabase();
   let analysisId: string;
   try {
-    const submission = await submitRepository(admin, orgId, url);
+    const submission = await submitRepository(admin, orgId, url, userId);
     analysisId = submission.analysisId;
-    if (submission.created) start(await claimAnalysis(admin, analysisId));
+    if (submission.created) {
+      const token = await getGitHubToken(userId);
+      const claimed = await claimAnalysis(admin, analysisId);
+      claimed.token = token;
+      start(claimed);
+    }
   } catch (error) {
     if (error instanceof PipelineError) return { error: error.message };
     throw error;
@@ -43,7 +49,11 @@ export async function rerunAnalysis(analysisId: string): Promise<FormState> {
   if (!data) return { error: "Analysis not found" };
 
   try {
-    start(await claimAnalysis(createAdminSupabase(), analysisId));
+    const userId = (await auth()).userId;
+    const token = await getGitHubToken(userId);
+    const claimed = await claimAnalysis(createAdminSupabase(), analysisId);
+    claimed.token = token;
+    start(claimed);
   } catch (error) {
     if (error instanceof AlreadyRunningError) return { error: "It's already running" };
     throw error;

@@ -53,10 +53,12 @@ export function parseRepositoryUrl(input: string): Repository {
 // The commit is resolved first and the archive fetched at exactly that commit,
 // so the recorded sha is the code that was parsed, not whatever HEAD became
 // while the download ran. Unauthenticated: no token is asked for or stored.
-export async function resolveHeadCommit({ owner, name }: Repository): Promise<string> {
+export async function resolveHeadCommit({ owner, name }: Repository, token?: string): Promise<string> {
+  const headers: Record<string, string> = { Accept: "application/vnd.github.sha", "User-Agent": "cartograph" };
+  if (token) headers.Authorization = `Bearer ${token}`;
   const response = await withTimeout(`Asking GitHub for ${owner}/${name}'s latest commit`, API_TIMEOUT_MS, () =>
     fetch(`https://api.github.com/repos/${owner}/${name}/commits/HEAD`, {
-      headers: { Accept: "application/vnd.github.sha", "User-Agent": "cartograph" },
+      headers,
       signal: AbortSignal.timeout(API_TIMEOUT_MS),
     }),
   );
@@ -66,10 +68,13 @@ export async function resolveHeadCommit({ owner, name }: Repository): Promise<st
     return sha;
   }
   if (response.status === 404) {
-    throw new PipelineError(`${owner}/${name} doesn't exist on GitHub, or it isn't public`);
+    throw new PipelineError(`${owner}/${name} doesn't exist on GitHub, or you don't have access to it`);
   }
   if (response.status === 409 || response.status === 422) {
     throw new PipelineError(`${owner}/${name} has no commits to analyse`);
+  }
+  if (response.status === 403 && response.headers.get("x-github-sso")) {
+    throw new PipelineError(`${owner}/${name} requires SAML single sign-on approval. Please authorize the Cartograph OAuth app in your GitHub organization settings.`);
   }
   if ((response.status === 403 || response.status === 429) && response.headers.get("x-ratelimit-remaining") === "0") {
     const reset = Number(response.headers.get("x-ratelimit-reset"));
@@ -82,12 +87,14 @@ export async function resolveHeadCommit({ owner, name }: Repository): Promise<st
 // One file's bytes at one commit, or null when the file isn't there at that
 // commit. raw.githubusercontent.com serves the committed bytes, so their
 // sha256 is comparable with the hash the parser stored.
-export async function fetchFileAt({ owner, name }: Repository, sha: string, filePath: string): Promise<Buffer | null> {
+export async function fetchFileAt({ owner, name }: Repository, sha: string, filePath: string, token?: string): Promise<Buffer | null> {
+  const headers: Record<string, string> = { "User-Agent": "cartograph" };
+  if (token) headers.Authorization = `Bearer ${token}`;
   const what = `Fetching ${filePath} from ${owner}/${name} at ${sha.slice(0, 7)}`;
   const encoded = filePath.split("/").map(encodeURIComponent).join("/");
   const response = await withTimeout(what, API_TIMEOUT_MS, () =>
     fetch(`https://raw.githubusercontent.com/${owner}/${name}/${sha}/${encoded}`, {
-      headers: { "User-Agent": "cartograph" },
+      headers,
       signal: AbortSignal.timeout(API_TIMEOUT_MS),
     }),
   );
@@ -99,12 +106,14 @@ export async function fetchFileAt({ owner, name }: Repository, sha: string, file
 // Streams the archive straight into the directory, dropping GitHub's
 // "<owner>-<name>-<sha>/" wrapper folder. tar refuses absolute paths and "..",
 // so nothing lands outside it.
-export async function downloadArchive({ owner, name }: Repository, sha: string, directory: string): Promise<number> {
+export async function downloadArchive({ owner, name }: Repository, sha: string, directory: string, token?: string): Promise<number> {
+  const headers: Record<string, string> = { "User-Agent": "cartograph" };
+  if (token) headers.Authorization = `Bearer ${token}`;
   const what = `Downloading the archive for ${owner}/${name}`;
   // One signal for the request and the body, so the limit is on the whole download.
   const signal = AbortSignal.timeout(ARCHIVE_TIMEOUT_MS);
   const response = await withTimeout(what, ARCHIVE_TIMEOUT_MS, () =>
-    fetch(`https://codeload.github.com/${owner}/${name}/tar.gz/${sha}`, { headers: { "User-Agent": "cartograph" }, signal }),
+    fetch(`https://codeload.github.com/${owner}/${name}/tar.gz/${sha}`, { headers, signal }),
   );
   if (!response.ok || !response.body) {
     throw new PipelineError(`Downloading the archive for ${owner}/${name} failed: GitHub answered ${response.status}`);

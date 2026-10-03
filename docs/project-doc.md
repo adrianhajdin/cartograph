@@ -83,8 +83,7 @@ tool drifts toward becoming a code reviewer. Both are refused.
 
 ## Scope
 
-- Sign-in with GitHub, Google or email, for identity only. No repo scope, no
-  token storage, public repositories only.
+- Sign-in with GitHub (for repository access) or Google/Email (for identity). No long-term token storage in custom databases; tokens are fetched on demand via Clerk.
 - Organizations. Every analysis belongs to one, people are invited into one, and
   what you can see follows from which one you're in. Default roles only.
 - Parsing every file — imports, re-exports and dynamic imports become edges.
@@ -116,8 +115,7 @@ like an improvement. The reason matters more than the refusal.
 - **Letting the agent traverse the graph itself.** It picks a starting point and
   a direction; the same arithmetic that draws the canvas does the walk. If the
   model does the walking, invented structure comes straight back in.
-- **Private repositories.** Requires a token that would then have to be stored.
-  Not in v1.
+- **Private repositories (v2).** Supported via on-demand Clerk OAuth tokens, without storing raw credentials in custom tables.
 - **Approximate routes.** If a route's method and full path can't both be
   recovered from the syntax, show nothing. A wrong route is the same failure as
   an invented edge.

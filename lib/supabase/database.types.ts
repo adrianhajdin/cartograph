@@ -66,6 +66,7 @@ export type Database = {
           id: string
           organization_id: string
           project_id: string
+          user_id: string | null
           schema_version: number | null
           stage: Database["public"]["Enums"]["analysis_stage"] | null
           stage_message: string | null
@@ -82,6 +83,7 @@ export type Database = {
           id?: string
           organization_id: string
           project_id: string
+          user_id?: string | null
           schema_version?: number | null
           stage?: Database["public"]["Enums"]["analysis_stage"] | null
           stage_message?: string | null
@@ -98,6 +100,7 @@ export type Database = {
           id?: string
           organization_id?: string
           project_id?: string
+          user_id?: string | null
           schema_version?: number | null
           stage?: Database["public"]["Enums"]["analysis_stage"] | null
           stage_message?: string | null

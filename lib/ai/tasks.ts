@@ -83,7 +83,6 @@ export async function classifyFile(input: ClassifyInput, deps: { cache: Cache; s
         { role: "system", content: CLASSIFY_SYSTEM },
         { role: "user", content: classifyMessage(question, excerpt) },
       ],
-      reasoning_effort: "low",
       response_format: {
         type: "json_schema",
         json_schema: {
@@ -130,8 +129,6 @@ async function complete(model: string, system: string, user: string): Promise<st
       { role: "system", content: system },
       { role: "user", content: user },
     ],
-    reasoning_effort: "low",
-    verbosity: "low",
   });
   const body = response.choices[0]?.message.content?.trim();
   if (!body) throw new Error(`${model} returned an empty answer (finish reason: ${response.choices[0]?.finish_reason ?? "none"})`);

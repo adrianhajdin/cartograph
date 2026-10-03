@@ -10,7 +10,7 @@ export type Submission = { analysisId: string; created: boolean };
 // constraints rather than a check-then-insert, so two tabs submitting the same
 // URL at once still end with one row. Nothing here contacts GitHub: a
 // repository that doesn't exist gets a row, and that row fails in fetch.
-export async function submitRepository(db: Db, organizationId: string, url: string): Promise<Submission> {
+export async function submitRepository(db: Db, organizationId: string, url: string, userId?: string | null): Promise<Submission> {
   const { owner, name } = parseRepositoryUrl(url);
 
   const org = await db.from("organizations").upsert({ id: organizationId }, { onConflict: "id", ignoreDuplicates: true });
@@ -34,7 +34,7 @@ export async function submitRepository(db: Db, organizationId: string, url: stri
 
   const inserted = await db
     .from("analyses")
-    .upsert({ organization_id: organizationId, project_id: found.data.id }, { onConflict: "project_id", ignoreDuplicates: true })
+    .upsert({ organization_id: organizationId, project_id: found.data.id, user_id: userId }, { onConflict: "project_id", ignoreDuplicates: true })
     .select("id");
   if (inserted.error) throw new Error(`Creating the analysis failed: ${inserted.error.message}`);
   const [created] = inserted.data;
