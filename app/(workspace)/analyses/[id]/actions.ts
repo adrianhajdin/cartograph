@@ -1,6 +1,8 @@
 "use server";
 
 import { createHash } from "node:crypto";
+import { auth } from "@clerk/nextjs/server";
+import { getGitHubToken } from "@/lib/github-token";
 import { tracingStatus, type TracingStatus } from "@/lib/ai/client";
 import { classifyFile, explainFile, explainFolder, type Cache } from "@/lib/ai/tasks";
 import { loadFileInput, loadFolderInput } from "@/lib/analysis/context";
@@ -82,7 +84,10 @@ export async function explainFolderAction(analysisId: string, dir: string): Prom
 export async function repositoryHeadAction(analysisId: string): Promise<HeadResult> {
   try {
     const analysis = await readAnalysis(await createServerSupabase(), analysisId);
-    return { ok: true, head: await resolveHeadCommit(analysis.repository), analysed: analysis.commitSha };
+    const { userId } = await auth();
+    const tokenResult = await getGitHubToken(userId);
+    const token = tokenResult.ok ? (tokenResult.token ?? undefined) : undefined;
+    return { ok: true, head: await resolveHeadCommit(analysis.repository, token), analysed: analysis.commitSha };
   } catch (error) {
     return { ok: false, error: messageOf(error) };
   }
@@ -98,7 +103,10 @@ export async function fileAtHeadAction(analysisId: string, path: string, head: s
     const { data: file, error } = await db.from("files").select("hash").eq("analysis_id", analysis.id).eq("path", path).maybeSingle();
     if (error) throw new Error(`Reading ${path} failed: ${error.message}`);
     if (!file?.hash) return { ok: false, error: `${path} isn't a parsed file in this analysis` };
-    const bytes = await fetchFileAt(analysis.repository, head, path);
+    const { userId } = await auth();
+    const tokenResult = await getGitHubToken(userId);
+    const token = tokenResult.ok ? (tokenResult.token ?? undefined) : undefined;
+    const bytes = await fetchFileAt(analysis.repository, head, path, token);
     if (bytes === null) return { ok: true, state: "deleted" };
     return { ok: true, state: sha256(bytes) === file.hash ? "unchanged" : "changed" };
   } catch (error) {
@@ -159,7 +167,10 @@ function sourceAtAnalysedCommit(analysis: Analysis, path: string, hash: string):
   let pending: Promise<string> | null = null;
   return () => {
     pending ??= (async () => {
-      const bytes = await fetchFileAt(analysis.repository, analysis.commitSha, path);
+      const { userId } = await auth();
+      const tokenResult = await getGitHubToken(userId);
+      const token = tokenResult.ok ? (tokenResult.token ?? undefined) : undefined;
+      const bytes = await fetchFileAt(analysis.repository, analysis.commitSha, path, token);
       if (bytes === null) throw new Error(`GitHub has no ${path} at ${analysis.commitSha.slice(0, 7)}, the commit that was analysed`);
       if (sha256(bytes) !== hash) throw new Error(`GitHub's copy of ${path} at ${analysis.commitSha.slice(0, 7)} isn't what was parsed`);
       return bytes.toString("utf8");

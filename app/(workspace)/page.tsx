@@ -56,7 +56,7 @@ export default async function DashboardPage() {
       {rows.length === 0 ? (
         <div className="px-3 py-10 text-xs text-fg-muted">
           <p className="text-fg">No analyses yet.</p>
-          <p className="mt-1">Paste a public GitHub repository above to map it.</p>
+          <p className="mt-1">Paste or select a GitHub repository above to map it.</p>
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-auto">
